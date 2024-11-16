@@ -1,82 +1,91 @@
+import dotenv from 'dotenv';
+import express from 'express';
+import session from 'express-session';
+import axios from 'axios';
+import { requireAuth } from '@clerk/clerk-sdk-node';
 
-require('dotenv').config();
-
-const express = require('express');
-const passport = require('passport');
-const session = require('express-session');
-const { OAuth2Client } = require('google-auth-library');
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
+// Load environment variables
+dotenv.config();
 
 const app = express();
 
-
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+// Get environment variables
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'default-session-secret';
+const CLERK_API_KEY = process.env.CLERK_API_KEY;
 
+if (!GEMINI_API_KEY) {
+  console.error('Missing Gemini API Key');
+  process.exit(1);
+}
 
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: GOOGLE_CLIENT_ID,
-      clientSecret: GOOGLE_CLIENT_SECRET,
-      callbackURL: 'http://localhost:5000/auth/google/callback',
-    },
-    (accessToken, refreshToken, profile, done) => {
-      return done(null, profile);
-    }
-  )
+if (!CLERK_API_KEY) {
+  console.error('Missing Clerk API Key');
+  process.exit(1);
+}
+
+// Middleware for parsing JSON data
+app.use(express.json());
+
+// Configure session
+app.use(
+  session({
+    secret: SESSION_SECRET,
+    resave: true,
+    saveUninitialized: true,
+  })
 );
 
-app.use(session({ secret: SESSION_SECRET, resave: true, saveUninitialized: true }));
-app.use(passport.initialize());
-app.use(passport.session());
+// Clerk authentication middleware
+const authenticate = requireAuth();
 
+// Route: Recognize Sign Language (Protected)
+app.post('/api/recognize-sign-language', authenticate, async (req, res) => {
+  const { videoFrame } = req.body;
 
-passport.serializeUser((user, done) => {
-  done(null, user);
-});
-
-
-passport.deserializeUser((user, done) => {
-  done(null, user);
-});
-
-
-app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-
-
-app.get(
-  '/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/' }),
-  (req, res) => {
-    res.redirect('/');
-  }
-);
-
-
-app.post('/auth/google/callback', async (req, res) => {
-  const { token } = req.body;
-
-  const client = new OAuth2Client(GOOGLE_CLIENT_ID);
   try {
-    const ticket = await client.verifyIdToken({
-      idToken: token,
-      audience: GOOGLE_CLIENT_ID, 
-    });
-    const payload = ticket.getPayload();
-    console.log(payload);
+    const response = await axios.post(
+      'https://ai.google.dev/gemini/v1/recognize',
+      { image: videoFrame },
+      { headers: { Authorization: `Bearer ${GEMINI_API_KEY}` } }
+    );
 
-    
-    req.session.user = payload;
-
-    res.status(200).send('User authenticated');
+    res.json({ text: response.data.text });
   } catch (error) {
-    res.status(400).send('Invalid token');
+    console.error('Gemini API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/speech-to-text', async (req, res) => {
+  const { audioData } = req.body;
+
+  try {
+    const response = await axios.post(
+      'https://ai.google.dev/gemini/v1/speech-to-text',
+      { audio: audioData },
+      { headers: { Authorization: `Bearer ${GEMINI_API_KEY}` } }
+    );
+
+    res.json({ text: response.data.transcript });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
 
-app.listen(5000, () => {
-  console.log('Server running on http://localhost:5000');
+// Sample protected route
+app.get('/api/protected', authenticate, (req, res) => {
+  res.json({ message: 'You are authenticated!', userId: req.auth.userId });
+});
+
+// Sample public route
+app.get('/api/public', (req, res) => {
+  res.json({ message: 'This is a public route' });
+});
+
+// Start the server
+const PORT = 5000;
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
