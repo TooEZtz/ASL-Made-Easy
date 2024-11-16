@@ -4,7 +4,7 @@ import NavBar from './Components/NavBar';
 import SpeechToASL from './Pages/SpeechToASL';
 import GetStarted from './Pages/GetStarted';
 import Home from './Pages/Home';
-
+import GoogleAuth from './Components/GoogleAuth';
 
 function App() {
   return (
@@ -12,9 +12,9 @@ function App() {
       <NavBar /> 
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="./Pages/SpeechToASL" element={<SpeechToASL />} />
-        <Route path="./Pages/GetStarted" element={<GetStarted />} />
-
+        <Route path="/SpeechToASL" element={<SpeechToASL />} />
+        <Route path="/GetStarted" element={<GetStarted />} />
+        <Route path="/auth/google" element={<GoogleAuth />} />
       </Routes>
     </Router>
   );
